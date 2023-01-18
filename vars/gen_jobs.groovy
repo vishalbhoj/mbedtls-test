@@ -152,6 +152,65 @@ def platform_lacks_tls_tools(platform) {
     return ['freebsd'].contains(os)
 }
 
+def gen_tux_job(platform="ubuntu-18.04", component="test", label_prefix='') {
+    def jobs = [:]
+    /* Default to the full platform hame is a shorthand is not found */
+    def job_name = "all_tuxsuite_jobs"
+    def use_docker = platform_has_docker(platform)
+    def extra_setup_code = ''
+    def node_label = node_label_for_platform(platform)
+
+    jobs[job_name] = {
+        node(node_label) {
+            try {
+                if (use_docker) {
+                    common.get_docker_image(platform)
+                }
+                dir('src') {
+                    checkout_repo.checkout_repo()
+                    writeFile file: 'steps.sh', text: """\
+#!/bin/sh
+set -eux
+wget https://gitlab.com/Linaro/tuxsuite/-/raw/master/examples/bitbake/mbed.yaml -O mbed.yaml
+pip install tuxsuite
+export PATH=$PATH:/var/lib/builds/.local/bin/
+tuxsuite plan mbed.yaml
+"""
+                    sh 'chmod +x steps.sh'
+                }
+                timeout(time: common.perJobTimeout.time,
+                        unit: common.perJobTimeout.unit) {
+                    try {
+                        if (use_docker) {
+                            sh common.docker_script(
+                                platform, "/var/lib/build/steps.sh"
+                            )
+                        } else {
+                            dir('src') {
+                                sh './steps.sh'
+                            }
+                        }
+                    } finally {
+                        dir('src') {
+                            analysis.stash_outcomes(job_name)
+                        }
+                        dir('src/tests/') {
+                            common.archive_zipped_log_files(job_name)
+                        }
+                    }
+                }
+            } catch (err) {
+                failed_builds[job_name] = true
+                throw (err)
+            } finally {
+                deleteDir()
+            }
+        }
+    }
+    return jobs
+}
+
+
 def gen_all_sh_jobs(platform, component, label_prefix='') {
     def jobs = [:]
     def shorthands = [
@@ -609,9 +668,7 @@ def gen_release_jobs(label_prefix='', run_examples=true) {
     }
 
     if (env.RUN_ALL_SH == "true") {
-        common.all_all_sh_components.each({component, platform ->
-            jobs = jobs + gen_all_sh_jobs(platform, component, label_prefix)
-        })
+        jobs = jobs + gen_tux_job()
     }
 
     /* FreeBSD all.sh jobs */
