@@ -169,12 +169,11 @@ def gen_tux_job(platform="ubuntu-18.04", component="test", label_prefix='') {
                 dir('src') {
                     checkout_repo.checkout_repo()
                     writeFile file: 'steps.sh', text: """\
-#!/bin/sh
+#!/bin/bash
 set -eux
-wget https://gitlab.com/Linaro/tuxsuite/-/raw/master/examples/bitbake/mbed.yaml -O mbed.yaml
-pip install tuxsuite
-export PATH=$PATH:/var/lib/builds/.local/bin/
-tuxsuite plan mbed.yaml
+curl https://people.linaro.org/~vishal.bhoj/mbed.yaml -o mbed.yaml
+tuxsuite plan mbed.yaml --json-out builds.json
+while read -r name; do read -r download_url; curl -L \$download_url/ -o \$name.json; if \$(grep -q "csv" \$name.json); then curl -L \$download_url/outcome.csv -o "\$name-outcome.csv"; fi ; done  < <(jq -cr '.builds[] | (.name, .download_url)' builds.json)
 """
                     sh 'chmod +x steps.sh'
                 }
@@ -182,9 +181,11 @@ tuxsuite plan mbed.yaml
                         unit: common.perJobTimeout.unit) {
                     try {
                         if (use_docker) {
-                            sh common.docker_script(
+                             withCredentials([string(credentialsId: 'TUXSUITE_TOKEN', variable: 'TUXSUITE_TOKEN')]) {
+                             sh common.docker_tux_script(
                                 platform, "/var/lib/build/steps.sh"
                             )
+                }
                         } else {
                             dir('src') {
                                 sh './steps.sh'

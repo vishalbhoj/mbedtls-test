@@ -144,6 +144,14 @@ docker run -u \$(id -u):\$(id -g) -e MAKEFLAGS --rm --entrypoint $entrypoint \
 """
 }
 
+def docker_tux_script(platform, entrypoint, entrypoint_arguments='') {
+    def docker_image = get_docker_tag(platform)
+    return """\
+docker run -u \$(id -u):\$(id -g) -e MAKEFLAGS -v `pwd`/src:/var/lib/build -w /var/lib/build -e TUXSUITE_TOKEN=\$TUXSUITE_TOKEN --rm --entrypoint $entrypoint \
+    -w /var/lib/build -v `pwd`/src:/var/lib/build \
+    --cap-add SYS_PTRACE tuxsuite/tuxsuite $entrypoint_arguments
+"""
+}
 /* Get components of all.sh for a list of platforms*/
 def get_branch_information() {
     node('container-host') {
